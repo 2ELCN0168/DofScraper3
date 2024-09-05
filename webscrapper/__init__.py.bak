@@ -40,16 +40,12 @@ class WebScraper:
             return response.text
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 403:
-                print(
-                    f"\n[{Colors.RED}>{Colors.RESET}] - {Colors.MAGENTA}Blocage temporaire du serveur, reprise dans 5 minutes.{Colors.RESET}\n"
-                )
+                print("\n[>] Blocage temporaire du serveur, reprise dans 5 minutes.\n")
                 for _ in tqdm(range(300), desc="Waiting", unit="s"):
                     time.sleep(1)
                 return self.fetch_page(path)
         except requests.exceptions.RequestException as e:
-            print(
-                f"\n[{Colors.RED}!{Colors.RESET}] - {Colors.RED}Error fetching the page : {Colors.YELLOW}{e}{Colors.RESET}"
-            )
+            print(f"Error fetching the page : {e}")
             return None
 
     def parse_html(self, html):
@@ -114,12 +110,8 @@ class DofScraper(WebScraper):
         if soup:
             encyclo_illus = soup.find("img", class_="img-maxresponsive")
             if encyclo_illus and encyclo_illus.has_attr("src"):
-                return (
-                    encyclo_illus["src"]
-                    if encyclo_illus
-                    else "https://static.ankama.com/dofus/www/game/items/200/0.png"
-                )
-            return None
+                return encyclo_illus["src"] if encyclo_illus else None
+        return None
 
     def extract_item_family(self, item_url):
         """Extract family if monster"""
@@ -172,7 +164,18 @@ class DofScraper(WebScraper):
             "picture": (self.extract_illus_link(item_link)),
             "family": (self.extract_item_family(item_link)),
         }
+
+        print(
+            f"Lien : {item_data['link']} | "
+            f"Nom : {item_data['name']} | "
+            f"Type : {item_data['type']} | "
+            f"Niveau : {item_data['level']} | "
+            f"Famille : {item_data['family']} "
+        )
+
+        # if all(item_data.values()):
         return item_data
+        # return None
 
     def save_item(self, output_file, category, items):
         """Save each item in the JSON output file"""
@@ -190,54 +193,13 @@ class DofScraper(WebScraper):
                 content[category][item_type] = []
             content[category][item_type].append(item)
 
+        # content[category].extend(items)
+
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(content, f, ensure_ascii=False, indent=2)
 
-    def process_page(
-        self, base_url, output_file, category, type_name=None, filter_param=None
-    ):
-        """Generic method to process pages"""
-        items = []
-        page = 1
-
-        while True:
-            url = f"{base_url}?page={page}"
-            if filter_param:
-                url += f"&{filter_param}"
-            print(
-                f"[{Colors.BLUE}:{Colors.RESET}] - {Colors.YELLOW}Collecte de la page : {Colors.CYAN}{url}{Colors.RESET}"
-            )
-
-            html = self.fetch_page(url)
-            if not html:
-                break
-
-            soup = self.parse_html(html)
-            rows = self.extract_table(soup)
-
-            if not rows:
-                break
-
-            for row in rows:
-                item_info = self.extract_item_data(row)
-                if item_info:
-                    if type_name:
-                        item_info["type"] = type_name
-                    items.append(item_info)
-
-                    print(
-                        f"Lien : {Colors.BLUE}{item_info['link']}{Colors.RESET} | "
-                        f"Nom : {Colors.YELLOW}{item_info['name']}{Colors.RESET} | "
-                        f"Type : {Colors.MAGENTA}{item_info['type']}{Colors.RESET} | "
-                        f"Niveau : {Colors.RED}{item_info['level']}{Colors.RESET} | "
-                        f"Famille : {Colors.CYAN}{item_info['family']}{Colors.RESET} "
-                    )
-
-            page += 1
-        self.save_item(output_file, category, items)
-        return items
-
     def process_items(self, _url, output_file):
+        items = []
         category = self.determine_master_category(_url)
 
         if "/montures" in _url:
@@ -246,15 +208,58 @@ class DofScraper(WebScraper):
                 "Muldo": "model_family_id%5B%5D=5",
             }
 
-            items = []
             for mount_type, filter_param in mount_filters.items():
-                items.extend(
-                    self.process_page(
-                        _url, output_file, category, mount_type, filter_param
+                page = 1
+                while True:
+                    url = f"{_url}?text=&{filter_param}&page={page}"
+                    print(
+                        f"{Colors.BLUE}::{Colors.RESET} {Colors.YELLOW}Collecte de la page : {Colors.CYAN}{url}{Colors.RESET}"
                     )
-                )
+
+                    html = self.fetch_page(url)
+                    if not html:
+                        break
+
+                    soup = self.parse_html(html)
+                    rows = self.extract_table(soup)
+
+                    if not rows:
+                        break
+
+                    for row in rows:
+                        item_info = self.extract_item_data(row)
+                        if item_info:
+                            item_info["type"] = mount_type
+                            items.append(item_info)
+                            self.save_item(output_file, category, items)
+                    page += 1
+
         else:
-            items = self.process_page(_url, output_file, category)
+            page = 1
+            while True:
+                url = f"{_url}?page={page}"
+                print(
+                    f"{Colors.BLUE}::{Colors.RESET} {Colors.YELLOW}Collecte de la page : {Colors.CYAN}{url}{Colors.RESET}"
+                )
+
+                html = self.fetch_page(url)
+                if not html:
+                    break
+
+                soup = self.parse_html(html)
+                rows = self.extract_table(soup)
+
+                if not rows:
+                    break
+
+                for row in rows:
+                    item_info = self.extract_item_data(row)
+                    if item_info:
+                        items.append(item_info)
+                        self.save_item(output_file, category, items)
+
+                page += 1
+
         return items
 
     def scrape(self, urls, output_file, index=None):
@@ -300,4 +305,4 @@ urls = [
 ]
 
 dofscraper = DofScraper("https://www.dofus.com")
-data = dofscraper.scrape(urls, "result.json", index=0)
+data = dofscraper.scrape(urls, "result.json", index=4)
