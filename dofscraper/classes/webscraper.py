@@ -203,10 +203,10 @@ class DofScraper(WebScraper):
         self, base_url, output_file, category, type_name=None, filter_param=None
     ):
         """Generic method to process pages"""
-        items = []
         page = 1
 
         while True:
+            items = []
             url = f"{base_url}?page={page}"
             if filter_param:
                 url += f"&{filter_param}"
@@ -239,8 +239,8 @@ class DofScraper(WebScraper):
                         f"Famille : {Colors.CYAN}{item_info['family']}{Colors.RESET} ]"
                     )
 
-            page += 1
             self.save_item(output_file, category, items)
+            page += 1
         return items
 
     def process_items(self, _url, output_file):
